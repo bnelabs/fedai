@@ -11,7 +11,7 @@
 
 ## ✨ Key Features
 
-- 🤖 **AI-Powered Diagnosis** - Multi-provider support (Gemini, OpenRouter, Local AI)
+- 🤖 **AI-Powered Diagnosis** - Multi-provider support (Gemini, OpenRouter, OpenAI, Anthropic, Kimi, ZAI, local OpenAI-compatible servers) — bring your own API key or use the server-side free default (Gemini 3 Flash / GLM-4.6V-Flash / Gemma 4 via OpenRouter)
 - 📸 **Image Analysis** - Advanced plant disease detection from photos
 - 🌍 **Environmental Context** - Location, weather, soil, and elevation data
 - 🌐 **Multi-Language** - Support for multiple languages
@@ -99,7 +99,7 @@ Fedai is a full-stack web application with clear separation of concerns:
 - **Tech Stack:** Node.js, Express, multi-provider AI integration
 - **Purpose:** Secure API key management, external service orchestration
 - **Services:**
-  - AI Providers (Gemini, OpenRouter, Local AI)
+  - AI Providers (Gemini, OpenRouter, OpenAI, Anthropic, Kimi, ZAI, local OpenAI-compatible servers)
   - Weather data (Open-Meteo)
   - Soil data (SoilGrids)
   - Plant database (OpenPlantBook)
@@ -185,6 +185,7 @@ Fedai has been optimized for performance and reliability with several key improv
 ### 🔒 Security
 - **Explicit CORS**: No wildcard origins, explicit whitelist only
 - **Rate Limiting**: Endpoint-specific rate limits (20 AI analyses/hour, 60 data requests/15min)
-- **Secure API Key Management**: All API keys stored server-side only
+- **Secure API Key Management**: Server-side key by default — no user login or signup required; optional bring-your-own-key via the settings UI, transmitted in request headers/bodies, never in URL query strings
+- **SSRF Protection**: User-supplied AI base URLs validated against private/loopback/link-local ranges before any server-side fetch
 
 See [IMPROVEMENTS_COMPLETED.md](docs/reference/IMPROVEMENTS_COMPLETED.md) for detailed technical information.
