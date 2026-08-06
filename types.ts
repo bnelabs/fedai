@@ -270,7 +270,7 @@ export type LocationPermissionState = 'initial' | 'prompt' | 'checking' | 'grant
 export interface UserLocation {
   latitude: number;
   longitude: number;
-  source: 'gps' | 'ip';
+  source: 'gps' | 'ip' | 'manual';
   city?: string;
   country?: string; 
   countryCode?: string; 

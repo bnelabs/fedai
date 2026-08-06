@@ -27,7 +27,15 @@ async function robustFetch(url, options = {}, timeout = GEOLOCATION_API_TIMEOUT_
         agent = url.startsWith('https') ? new HttpsProxyAgent(proxyUrl) : new HttpProxyAgent(proxyUrl);
       }
 
-      const response = await fetch(url, { ...options, agent, signal: controller.signal });
+      const response = await fetch(url, {
+        ...options,
+        agent,
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Fedai/1.2 (plant-health-ai; +https://github.com/bnelabs/fedai)',
+          ...(options.headers || {})
+        }
+      });
       clearTimeout(timeoutId);
 
       if (!response.ok) {

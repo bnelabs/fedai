@@ -29,7 +29,7 @@ class AIProviderFactory {
    * @param {string} providerType
    * @returns {Object|null}
    */
-  static getProviderMetadata(providerType) {
+  static async getProviderMetadata(providerType) {
     const ProviderClass = PROVIDER_MAP[providerType];
     if (!ProviderClass) return null;
     return new ProviderClass({}).getMetadata();
@@ -57,14 +57,16 @@ class AIProviderFactory {
    * Get list of available providers with metadata
    * @returns {Array<Object>}
    */
-  static getAvailableProviders() {
-    return Object.entries(PROVIDER_MAP).map(([key, ProviderClass]) => {
-      const instance = new ProviderClass({});
-      return {
-        id: key,
-        ...instance.getMetadata()
-      };
-    });
+  static async getAvailableProviders() {
+    return Promise.all(
+      Object.entries(PROVIDER_MAP).map(async ([key, ProviderClass]) => {
+        const instance = new ProviderClass({});
+        return {
+          id: key,
+          ...(await instance.getMetadata())
+        };
+      })
+    );
   }
 
   /**

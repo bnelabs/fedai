@@ -87,6 +87,47 @@ class LocalOpenAIProvider extends BaseAIProvider {
     }
   }
 
+  /**
+   * Text-only generation for LLM fallbacks (weather/soil). Returns JSON string.
+   */
+  async generateText({ systemInstruction, prompt, model }) {
+    const modelToUse = model || this.model;
+
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': this.apiKey ? `Bearer ${this.apiKey}` : '',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: modelToUse,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: prompt }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.7,
+          max_tokens: 2048
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Local AI API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('Invalid response format from local AI');
+      }
+      return data.choices[0].message.content;
+    } catch (error) {
+      console.error('Local AI generateText error:', error);
+      throw new Error(`Local AI API error: ${error.message}`);
+    }
+  }
+
   async testConnection() {
     try {
       const response = await fetch(`${this.baseUrl}/models`, {

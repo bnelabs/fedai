@@ -2,6 +2,7 @@
 // fedai-backend-proxy/src/api/controllers/data.controller.js
 
 const robustFetch = require('../utils/robustFetch');
+const AIProviderFactory = require('../../services/ai-providers/provider.factory');
 const {
   IPAPI_CO_URL,
   IP_API_COM_URL,
@@ -118,6 +119,110 @@ function calculateAveragesFromDaily(dailyData) {
 }
 
 // --- Weather Data Controller ---
+
+/**
+ * Keyless fallback for current weather when the Open-Meteo forecast host
+ * fails (e.g. datacenter egress throttling). wttr.in needs no API key.
+ * Maps its current_condition payload onto the Open-Meteo CurrentWeatherData shape.
+ */
+async function fetchCurrentWeatherFallback(latitude, longitude) {
+  try {
+    const url = `https://wttr.in/${latitude},${longitude}?format=j1`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Fedai/1.2 (plant-health-ai; +https://github.com/bnelabs/fedai)' }
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) return null;
+    const data = await response.json();
+    const cur = data && data.current_condition && data.current_condition[0];
+    if (!cur || cur.temp_C === undefined) return null;
+    return {
+      temperature_2m: parseFloat(cur.temp_C),
+      relative_humidity_2m: cur.humidity !== undefined ? parseFloat(cur.humidity) : null,
+      precipitation: cur.precipMM !== undefined ? parseFloat(cur.precipMM) : 0,
+      weather_code: cur.weatherCode !== undefined ? parseInt(cur.weatherCode, 10) : null,
+      wind_speed_10m: cur.windspeedKmph !== undefined ? parseFloat(cur.windspeedKmph) : null,
+      et0_fao_evapotranspiration: undefined
+    };
+  } catch (error) {
+    console.warn(`[WEATHER_FALLBACK] wttr.in fallback failed: ${error.message}`);
+    return null;
+  }
+}
+
+
+/**
+ * Ask the configured AI provider (server-side key, zero-login) for weather
+ * data at a location when all keyless sources failed. Returns an object in
+ * the WeatherData shape, or null on failure.
+ * @param {number} latitude
+ * @param {number} longitude
+ * @returns {Promise<{current?: object, recentMonthlyAverage?: object, historicalMonthlyAverage?: object}|null>}
+ */
+async function askLlmForWeather(latitude, longitude) {
+  try {
+    const provider = AIProviderFactory.createFromEnv();
+    const today = new Date().toISOString().slice(0, 10);
+    const systemInstruction = `You are a weather data provider. Return ONLY a valid JSON object. Do not add commentary. If you are unsure about a value, use null.`;
+    const prompt = `Provide current and recent weather for coordinates latitude ${latitude}, longitude ${longitude} (today: ${today}). Return JSON exactly in this shape:
+{
+  "current": {"temperature_2m": 20.5, "relative_humidity_2m": 60, "precipitation": 0, "weather_code": 1, "wind_speed_10m": 12, "et0_fao_evapotranspiration": 3.1},
+  "recentMonthlyAverage": {"mean_temp": 18.2, "total_precip": 45.0, "gdd_sum": 220},
+  "historicalMonthlyAverage": {"mean_temp": 17.5, "total_precip": 55.0, "gdd_sum": 200}
+}
+Use plausible values for the location's climate. Mark any values you are not confident about as null.`;
+    const raw = await provider.generateText({ systemInstruction, prompt });
+    const parsed = JSON.parse(raw.trim());
+    const out = {};
+    if (parsed.current && typeof parsed.current === 'object') out.current = parsed.current;
+    if (parsed.recentMonthlyAverage && typeof parsed.recentMonthlyAverage === 'object') out.recentMonthlyAverage = parsed.recentMonthlyAverage;
+    if (parsed.historicalMonthlyAverage && typeof parsed.historicalMonthlyAverage === 'object') out.historicalMonthlyAverage = parsed.historicalMonthlyAverage;
+    if (Object.keys(out).length === 0) return null;
+    console.warn(`[WEATHER_LLM_FALLBACK] Used AI provider for weather at ${latitude},${longitude}`);
+    return out;
+  } catch (error) {
+    console.warn(`[WEATHER_LLM_FALLBACK] AI fallback failed: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Ask the configured AI provider for soil properties at a location when
+ * SoilGrids fails. Returns the soil data object, or null on failure.
+ * @param {number} latitude
+ * @param {number} longitude
+ * @returns {Promise<object|null>}
+ */
+async function askLlmForSoil(latitude, longitude) {
+  try {
+    const provider = AIProviderFactory.createFromEnv();
+    const systemInstruction = `You are a soil data provider. Return ONLY a valid JSON object. Do not add commentary. If you are unsure about a value, use null.`;
+    const prompt = `Provide estimated soil properties (0-5cm depth) for coordinates latitude ${latitude}, longitude ${longitude}. Return JSON exactly in this shape:
+{
+  "soilPH": "6.3",
+  "soilOrganicCarbon": "12.0 g/kg",
+  "soilCEC": "18.0 cmolc/kg",
+  "soilNitrogen": "2.5 g/kg",
+  "soilSand": "40%",
+  "soilSilt": "35%",
+  "soilClay": "25%",
+  "soilAWC": "12.0 mm"
+}
+Use plausible values based on the region's typical soil (e.g. SoilGrids-like estimates). Mark any values you are not confident about as null.`;
+    const raw = await provider.generateText({ systemInstruction, prompt });
+    const parsed = JSON.parse(raw.trim());
+    if (!parsed || typeof parsed !== 'object') return null;
+    console.warn(`[SOIL_LLM_FALLBACK] Used AI provider for soil at ${latitude},${longitude}`);
+    return parsed;
+  } catch (error) {
+    console.warn(`[SOIL_LLM_FALLBACK] AI fallback failed: ${error.message}`);
+    return null;
+  }
+}
+
 const getWeatherData = async (req, res) => {
   const { latitude, longitude } = req.body;
   // console.log(`Received request for /api/weather for lat: ${latitude}, lon: ${longitude}`);
@@ -220,6 +325,16 @@ const getWeatherData = async (req, res) => {
         validatedCurrent = null;
     }
 
+    // Keyless fallback: if the Open-Meteo forecast host failed (common on
+    // datacenter egress), try wttr.in for current conditions.
+    if (!validatedCurrent) {
+        const fallbackCurrent = await fetchCurrentWeatherFallback(latitude, longitude);
+        if (fallbackCurrent) {
+            validatedCurrent = fallbackCurrent;
+        }
+    }
+
+
     let validatedRecentDailyRawData = recentDailyRawData;
     if (validatedRecentDailyRawData !== null && !Array.isArray(validatedRecentDailyRawData)) {
         console.warn(`[WEATHER_DATA_VALIDATION] Invalid 'recentDailyRawData' structure received. Expected array, got ${typeof validatedRecentDailyRawData}. Setting to null.`);
@@ -238,6 +353,18 @@ const getWeatherData = async (req, res) => {
         validatedHistoricalMonthlyAverage = null;
     }
     // --- End Validation ---
+
+    // AI fallback: if any weather component is still missing after all
+    // keyless sources failed, ask the configured LLM (server key, zero-login)
+    // for the location's weather and merge in whatever is missing.
+    if (!validatedCurrent || !validatedRecentMonthlyAverage || !validatedHistoricalMonthlyAverage) {
+        const llmWeather = await askLlmForWeather(latitude, longitude);
+        if (llmWeather) {
+            if (!validatedCurrent && llmWeather.current) validatedCurrent = llmWeather.current;
+            if (!validatedRecentMonthlyAverage && llmWeather.recentMonthlyAverage) validatedRecentMonthlyAverage = llmWeather.recentMonthlyAverage;
+            if (!validatedHistoricalMonthlyAverage && llmWeather.historicalMonthlyAverage) validatedHistoricalMonthlyAverage = llmWeather.historicalMonthlyAverage;
+        }
+    }
 
     res.json({
       current: validatedCurrent,
@@ -331,6 +458,14 @@ const getSoilData = async (req, res) => {
 
         // Handle Invalid API Response Structure
         if (allLayers.length === 0) {
+            const llmSoil = await askLlmForSoil(latitude, longitude);
+            if (llmSoil) {
+                return res.json({
+                    data: llmSoil,
+                    source: 'AI-estimate',
+                    dataTimestamp: new Date().toISOString()
+                });
+            }
             return res.status(502).json({
                 error: 'SoilGrids returned an invalid response.',
                 errorCode: 'SOIL_DATA_INVALID_RESPONSE',
@@ -341,6 +476,14 @@ const getSoilData = async (req, res) => {
         
         // Handle "No Data At Location"
         if (allLayers.every(l => l.depths[0]?.values?.mean === null || l.depths[0]?.values?.mean === undefined)) {
+            const llmSoil = await askLlmForSoil(latitude, longitude);
+            if (llmSoil) {
+                return res.json({
+                    data: llmSoil,
+                    source: 'AI-estimate',
+                    dataTimestamp: new Date().toISOString()
+                });
+            }
             return res.status(200).json({
                 error: 'Soil data is not available for this specific location.',
                 errorCode: 'SOIL_DATA_NOT_AT_LOCATION',
@@ -417,6 +560,14 @@ const getSoilData = async (req, res) => {
     } catch (error) {
         console.error(`[SOIL_API_ERROR] Unhandled error in getSoilData for ${latitude},${longitude}:`, error);
         // Handle General Fetch/Processing Errors
+        const llmSoil = await askLlmForSoil(latitude, longitude);
+        if (llmSoil) {
+            return res.json({
+                data: llmSoil,
+                source: 'AI-estimate',
+                dataTimestamp: new Date().toISOString()
+            });
+        }
         res.status(500).json({
             error: 'Failed to fetch or process soil data from the provider.',
             errorCode: 'SOIL_DATA_FETCH_FAILED',

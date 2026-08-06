@@ -33,6 +33,19 @@ class BaseAIProvider {
   }
 
   /**
+   * Generate text-only content (no image). Used for LLM fallbacks when
+   * external data services fail. Must return a JSON string.
+   * @param {Object} params
+   * @param {string} params.systemInstruction - System prompt
+   * @param {string} params.prompt - User prompt
+   * @param {string} [params.model] - Model name override
+   * @returns {Promise<string>} - JSON response as string
+   */
+  async generateText(params) {
+    throw new Error('generateText() must be implemented by provider');
+  }
+
+  /**
    * Test the provider connection
    * @returns {Promise<{status: 'UP' | 'DOWN', details?: string}>}
    */
@@ -46,8 +59,9 @@ class BaseAIProvider {
    * image analysis is rejected by the controller with PROVIDER_NO_VISION.
    * @returns {boolean}
    */
-  supportsVision() {
-    return this.getMetadata().supportsVision !== false;
+  async supportsVision() {
+    const metadata = await this.getMetadata().catch(() => ({}));
+    return metadata.supportsVision !== false;
   }
 
   /**

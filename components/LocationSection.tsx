@@ -1,10 +1,101 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useDataContext } from './DataContext.tsx';
 import { useLocalizationContext } from './LocalizationContext.tsx';
 import { MapPinIcon, InformationCircleIcon } from '@/components/icons';
 import LoadingSpinner from './ui/LoadingSpinner.tsx';
 import Tooltip from './ui/Tooltip.tsx';
+
+interface ManualLocationPayload {
+  latitude: number;
+  longitude: number;
+  city?: string;
+  country?: string;
+}
+
+interface ManualLocationInputProps {
+  onSet: (loc: ManualLocationPayload) => void;
+}
+
+/**
+ * Manual location entry — shown when GPS + IP detection both fail.
+ * Accepts a city name (geocoded via keyless Open-Meteo) or "lat, lon" coordinates.
+ */
+const ManualLocationInput = ({ onSet }: ManualLocationInputProps) => {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = value.trim();
+    if (!text) return;
+
+    setError('');
+    setLoading(true);
+    try {
+      // Case 1: direct coordinates "lat, lon"
+      const coordMatch = text.match(/^\s*(-?\d{1,2}(\.\d+)?)\s*[,;]\s*(-?\d{1,3}(\.\d+)?)\s*$/);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lon = parseFloat(coordMatch[3]);
+        if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+          onSet({ latitude: lat, longitude: lon });
+          return;
+        }
+        setError('Coordinates out of range. Latitude: -90..90, Longitude: -180..180.');
+        return;
+      }
+
+      // Case 2: city name -> keyless Open-Meteo geocoding
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(text)}&count=1&language=en&format=json`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Geocoding service error');
+      const data = await res.json();
+      const result = data?.results?.[0];
+      if (!result) {
+        setError('Location not found. Try "City, Country" or coordinates like "41.01, 28.98".');
+        return;
+      }
+      onSet({
+        latitude: result.latitude,
+        longitude: result.longitude,
+        city: result.name,
+        country: result.country,
+      });
+    } catch (err) {
+      setError('Could not resolve location. Please try again or enter coordinates.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-3 space-y-2">
+      <p className="text-xs font-medium text-[var(--text-secondary)]">
+        Or enter your location manually (city name or "latitude, longitude"):
+      </p>
+      <div className="flex space-x-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="e.g. Istanbul, Turkey  or  41.01, 28.98"
+          className="flex-1 px-3 py-2 text-sm rounded-md border border-[var(--border-color)] bg-white dark:bg-slate-700 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary-500)]"
+          aria-label="Manual location"
+        />
+        <button
+          type="submit"
+          disabled={loading || !value.trim()}
+          className="px-4 py-2 text-sm font-medium text-white bg-[var(--primary-600)] rounded-md hover:bg-[var(--primary-700)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--primary-500)]"
+        >
+          {loading ? 'Locating...' : 'Use This Location'}
+        </button>
+      </div>
+      {error && <p className="text-xs text-[var(--status-red-text)]">{error}</p>}
+    </form>
+  );
+};
 
 const LocationSection: React.FC = () => {
   const {
@@ -13,6 +104,7 @@ const LocationSection: React.FC = () => {
     locationPermission, // Added to potentially refine error messages if needed
     fetchDeviceLocation,
     fetchIpLocationData, // Added, though may not be used directly in this change
+    setManualLocation, // Added: user-entered location when auto-detection fails
   } = useDataContext();
   const { uiStrings } = useLocalizationContext();
 
@@ -131,6 +223,7 @@ const LocationSection: React.FC = () => {
                 >
                   {uiStrings.useIpLocationButton || "Use IP-Based Location Instead"}
                 </button>
+                <ManualLocationInput onSet={setManualLocation} />
               </div>
             </div>
           </div>
@@ -161,6 +254,7 @@ const LocationSection: React.FC = () => {
                     {uiStrings.retryButton || "Retry IP Location"}
                   </button>
                 </div>
+                <ManualLocationInput onSet={setManualLocation} />
               </div>
             </div>
           </div>

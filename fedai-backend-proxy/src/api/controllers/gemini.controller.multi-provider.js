@@ -122,7 +122,7 @@ module.exports = () => {
       }
 
       // Vision guard: reject image analysis for text-only providers
-      if (!provider.supportsVision()) {
+      if (!(await provider.supportsVision())) {
         return res.status(400).json({
           error: `Provider '${provider.name}' does not support image analysis (text-only provider).`,
           errorKey: 'PROVIDER_NO_VISION'
@@ -189,7 +189,7 @@ ${currentTaskInstruction}
               : !!(environmentalData?.elevation || environmentalData?.soilPH),
           // Add provider metadata
           aiProvider: provider.name,
-          aiModel: aiModel || provider.getMetadata().defaultModel
+          aiModel: aiModel || (await provider.getMetadata().catch(() => ({}))).defaultModel || null
         };
 
         res.json(finalResponse);
@@ -304,7 +304,7 @@ ${currentTaskInstruction}
    */
   const getProviders = async (req, res) => {
     try {
-      const providers = AIProviderFactory.getAvailableProviders();
+      const providers = await AIProviderFactory.getAvailableProviders();
       res.json({ providers });
     } catch (error) {
       console.error('Error getting providers:', error);

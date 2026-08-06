@@ -209,11 +209,30 @@ export function useLocationLogic() {
     console.log(`// DEBUG_LOG: State Change - userLocation: ${JSON.stringify(userLocation)}, status: ${status}, error: "${error}"`);
   }, [userLocation, status, error]);
 
+  /**
+   * Set a manually-entered location (user typed a city or coordinates).
+   * Used when GPS + IP detection both fail — the app asks the user.
+   */
+  const setManualLocation = useCallback((loc: { latitude: number; longitude: number; city?: string; country?: string }) => {
+    const manual: UserLocation = {
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      source: 'manual',
+      city: loc.city,
+      country: loc.country,
+      accuracyMessage: 'Manual location entered by user'
+    };
+    setUserLocation(manual);
+    setStatus('success');
+    setError(null);
+  }, []);
+
   return {
     userLocation,
     status,
     error,
     fetchDeviceLocation,
     fetchIpLocationData,
+    setManualLocation,
   };
 }

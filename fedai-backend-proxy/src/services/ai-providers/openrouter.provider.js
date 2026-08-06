@@ -83,6 +83,47 @@ class OpenRouterProvider extends BaseAIProvider {
     }
   }
 
+  /**
+   * Text-only generation for LLM fallbacks (weather/soil). Returns JSON string.
+   */
+  async generateText({ systemInstruction, prompt, model }) {
+    if (!this.apiKey) {
+      throw new Error('OpenRouter API key not configured');
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: model || this.getMetadata().defaultModel,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: prompt }
+          ],
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('Invalid response format from OpenRouter');
+      }
+      return data.choices[0].message.content;
+    } catch (error) {
+      console.error('OpenRouter generateText error:', error);
+      throw new Error(`OpenRouter API error: ${error.message}`);
+    }
+  }
+
   async testConnection() {
     if (!this.apiKey) {
       throw new Error('OpenRouter API key not configured');

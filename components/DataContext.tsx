@@ -10,6 +10,7 @@ interface DataContextType {
   isLoadingLocation: boolean;
   fetchDeviceLocation: () => Promise<void>; // Added
   fetchIpLocationData: () => Promise<void>; // Added
+  setManualLocation: (loc: { latitude: number; longitude: number; city?: string; country?: string }) => void;
   weatherData: WeatherData | null;
   isLoadingWeather: boolean;
   environmentalData: EnvironmentalData | null;
@@ -32,6 +33,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     error: locationError, // Get error message from useLocationLogic
     fetchDeviceLocation,
     fetchIpLocationData,
+    setManualLocation,
   } = useLocationLogic();
 
   // locationPermission is the error message (string) for backward compatibility
@@ -66,6 +68,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isLoadingLocation,
     fetchDeviceLocation, // Added
     fetchIpLocationData, // Added
+    setManualLocation, // Added
     weatherData,
     isLoadingWeather,
     environmentalData,
