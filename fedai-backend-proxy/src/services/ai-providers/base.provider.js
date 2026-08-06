@@ -60,7 +60,7 @@ class BaseAIProvider {
    * @returns {boolean}
    */
   async supportsVision() {
-    const metadata = await this.getMetadata().catch(() => ({}));
+    const metadata = await Promise.resolve(this.getMetadata()).catch(() => ({}));
     return metadata.supportsVision !== false;
   }
 

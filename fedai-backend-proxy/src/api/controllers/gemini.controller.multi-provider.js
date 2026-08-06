@@ -189,7 +189,7 @@ ${currentTaskInstruction}
               : !!(environmentalData?.elevation || environmentalData?.soilPH),
           // Add provider metadata
           aiProvider: provider.name,
-          aiModel: aiModel || (await provider.getMetadata().catch(() => ({}))).defaultModel || null
+          aiModel: aiModel || (await Promise.resolve(provider.getMetadata()).catch(() => ({}))).defaultModel || null
         };
 
         res.json(finalResponse);
