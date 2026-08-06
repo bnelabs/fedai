@@ -61,18 +61,55 @@ const getIpLocation = async (req, res) => {
     res.status(502).json({ error: 'Both IP location services failed.', details: errors });
 };
 
-// Helper function to calculate averages from daily data
+// Helper function to calculate averages from daily data.
+// NOTE: Open-Meteo's archive API no longer supports 'growing_degree_days' (or 'time')
+// as daily variables, so growing_degree_days is computed locally from
+// temperature_2m_max/min with a base temperature of 10°C:
+//   gdd_day = max(0, (tmax + tmin) / 2 - 10)
+// Return shape is unchanged ({ mean_temp, total_precip, gdd_sum }) so prompt.helpers.js
+// and the frontend keep working. mean_temp prefers the API-provided
+// temperature_2m_mean (when requested) and falls back to (tmax + tmin) / 2.
 function calculateAveragesFromDaily(dailyData) {
-    if (!dailyData || (!dailyData.temperature_2m_mean && !dailyData.precipitation_sum && !dailyData.growing_degree_days) || 
-        (dailyData.temperature_2m_mean?.length === 0 && dailyData.precipitation_sum?.length === 0 && (dailyData.growing_degree_days === undefined || dailyData.growing_degree_days?.length === 0)) ) {
+    if (!dailyData) {
         return { mean_temp: null, total_precip: null, gdd_sum: null };
     }
-    const validTemps = dailyData.temperature_2m_mean?.filter(t => t !== null && t !== undefined) || [];
+
+    const hasMeanTemps = Array.isArray(dailyData.temperature_2m_mean) && dailyData.temperature_2m_mean.length > 0;
+    const hasMaxMinTemps = Array.isArray(dailyData.temperature_2m_max) && Array.isArray(dailyData.temperature_2m_min) &&
+        dailyData.temperature_2m_max.length > 0 && dailyData.temperature_2m_min.length > 0;
+    const hasPrecip = Array.isArray(dailyData.precipitation_sum) && dailyData.precipitation_sum.length > 0;
+
+    if (!hasMeanTemps && !hasMaxMinTemps && !hasPrecip) {
+        return { mean_temp: null, total_precip: null, gdd_sum: null };
+    }
+
+    // Mean temperature: prefer the API-provided daily mean, else average of tmax/tmin
+    let validTemps = dailyData.temperature_2m_mean?.filter(t => t !== null && t !== undefined) || [];
+    if (validTemps.length === 0 && hasMaxMinTemps) {
+        validTemps = dailyData.temperature_2m_max.map((tmax, i) => {
+            const tmin = dailyData.temperature_2m_min[i];
+            if (tmax === null || tmax === undefined || tmin === null || tmin === undefined) return null;
+            return (tmax + tmin) / 2;
+        }).filter(t => t !== null && t !== undefined);
+    }
+
     const validPrecips = dailyData.precipitation_sum?.filter(p => p !== null && p !== undefined) || [];
-    const validGDDs = dailyData.growing_degree_days?.filter(gdd => gdd !== null && gdd !== undefined) || [];
+
+    // Growing degree days (base 10°C) computed from daily tmax/tmin
+    let gdd_sum = null;
+    if (hasMaxMinTemps) {
+        const validGDDs = dailyData.temperature_2m_max.map((tmax, i) => {
+            const tmin = dailyData.temperature_2m_min[i];
+            if (tmax === null || tmax === undefined || tmin === null || tmin === undefined) return null;
+            return Math.max(0, (tmax + tmin) / 2 - 10);
+        }).filter(gdd => gdd !== null && gdd !== undefined);
+        if (validGDDs.length > 0) {
+            gdd_sum = validGDDs.reduce((a, b) => a + b, 0);
+        }
+    }
+
     const mean_temp = validTemps.length > 0 ? validTemps.reduce((a, b) => a + b, 0) / validTemps.length : null;
     const total_precip = validPrecips.length > 0 ? validPrecips.reduce((a, b) => a + b, 0) : null;
-    const gdd_sum = validGDDs.length > 0 ? validGDDs.reduce((a, b) => a + b, 0) : null;
     return { 
         mean_temp: mean_temp !== null ? parseFloat(mean_temp.toFixed(1)) : null, 
         total_precip: total_precip !== null ? parseFloat(total_precip.toFixed(1)) : null,
@@ -120,7 +157,10 @@ const getWeatherData = async (req, res) => {
       const recentParams = new URLSearchParams({
         latitude: latitude.toString(), longitude: longitude.toString(),
         start_date: firstDayOfMonth, end_date: yesterday,
-        daily: 'temperature_2m_mean,precipitation_sum,time,growing_degree_days', // Added GDD
+        // NOTE: The archive API rejects 'time' and 'growing_degree_days' as daily variables.
+        // GDD is computed locally in calculateAveragesFromDaily from temperature_2m_max/min.
+        // temperature_2m_mean is kept so the frontend trend chart and prompt helpers still work.
+        daily: 'temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum,et0_fao_evapotranspiration',
         timezone: 'auto', temperature_unit: 'celsius', precipitation_unit: 'mm',
       });
       recentDailyPromise = robustFetch(`${OPEN_METEO_ARCHIVE_API_BASE}?${recentParams.toString()}`);
@@ -140,7 +180,7 @@ const getWeatherData = async (req, res) => {
       const historicalParams = new URLSearchParams({
         latitude: latitude.toString(), longitude: longitude.toString(),
         start_date: startDateHistorical, end_date: endDateHistorical,
-        daily: 'temperature_2m_mean,precipitation_sum,growing_degree_days', // Added GDD
+        daily: 'temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum,et0_fao_evapotranspiration',
         timezone: 'auto', temperature_unit: 'celsius', precipitation_unit: 'mm',
       });
       historicalDataPromises.push(robustFetch(`${OPEN_METEO_ARCHIVE_API_BASE}?${historicalParams.toString()}`));
@@ -255,27 +295,52 @@ const getSoilData = async (req, res) => {
         return res.status(400).json({ error: 'Latitude and longitude are required.' });
     }
     
-    // SoilGrids API requires separate property parameters (not comma-separated)
-    const properties = ['phh2o', 'soc', 'cec', 'nitrogen', 'sand', 'silt', 'clay', 'wv0033', 'wv1500'];
-    const propertyParams = properties.map(p => `property=${p}`).join('&');
+    // SoilGrids API requires separate property parameters (not comma-separated).
+    // A single 9-property query takes ~5.6s on normal networks but exceeds 13s from
+    // Render, so the properties are split into two smaller groups fetched in parallel
+    // (Promise.allSettled) and the timeout is raised to ~25s.
+    const propertyGroups = [
+        ['phh2o', 'soc', 'cec', 'nitrogen'],
+        ['sand', 'silt', 'clay', 'wv0033', 'wv1500'],
+    ];
     const depths = '0-5cm';
     const valueType = 'mean';
-    const soilGridsApiUrl = `${SOILGRIDS_API_URL_PREFIX}?lon=${longitude}&lat=${latitude}&${propertyParams}&depth=${depths}&value=${valueType}`;
+    const soilGridsTimeout = GEOLOCATION_API_TIMEOUT_MS + 18000; // ~25s (was ~13s)
+    const buildSoilGridsUrl = (properties) =>
+        `${SOILGRIDS_API_URL_PREFIX}?lon=${longitude}&lat=${latitude}&${properties.map(p => `property=${p}`).join('&')}&depth=${depths}&value=${valueType}`;
     
     try {
-        const data = await robustFetch(soilGridsApiUrl, {}, GEOLOCATION_API_TIMEOUT_MS + 6000);
+        const results = await Promise.allSettled(
+            propertyGroups.map(properties => robustFetch(buildSoilGridsUrl(properties), {}, soilGridsTimeout))
+        );
+
+        // Merge the layers from every group that responded successfully. If one group
+        // fails (e.g. slow network), the other group's properties are still returned.
+        const allLayers = [];
+        const fetchErrors = [];
+        for (const result of results) {
+            if (result.status === 'fulfilled') {
+                const data = result.value;
+                if (data && data.properties && Array.isArray(data.properties.layers)) {
+                    allLayers.push(...data.properties.layers);
+                }
+            } else if (result.reason) {
+                fetchErrors.push(String(result.reason?.message || result.reason));
+            }
+        }
 
         // Handle Invalid API Response Structure
-        if (!data || !data.properties || !Array.isArray(data.properties.layers)) {
+        if (allLayers.length === 0) {
             return res.status(502).json({
                 error: 'SoilGrids returned an invalid response.',
                 errorCode: 'SOIL_DATA_INVALID_RESPONSE',
-                source: 'SoilGrids'
+                source: 'SoilGrids',
+                ...(fetchErrors.length > 0 ? { detail: fetchErrors.join('; ') } : {}),
             });
         }
         
         // Handle "No Data At Location"
-        if (data.properties.layers.length === 0 || data.properties.layers.every(l => l.depths[0]?.values?.mean === null || l.depths[0]?.values?.mean === undefined)) {
+        if (allLayers.every(l => l.depths[0]?.values?.mean === null || l.depths[0]?.values?.mean === undefined)) {
             return res.status(200).json({
                 error: 'Soil data is not available for this specific location.',
                 errorCode: 'SOIL_DATA_NOT_AT_LOCATION',
@@ -287,7 +352,7 @@ const getSoilData = async (req, res) => {
         let wv0033_value = null;
         let wv1500_value = null;
         
-        data.properties.layers.forEach(layer => {
+        allLayers.forEach(layer => {
             if (!layer || typeof layer !== 'object' || !layer.depths || !Array.isArray(layer.depths) || !layer.depths[0] || typeof layer.depths[0] !== 'object' || !layer.depths[0].values || typeof layer.depths[0].values !== 'object') {
                 // console.warn(`// DEBUG_SOIL: Layer with unexpected depths/values structure:`, JSON.stringify(layer)); // Kept for debugging if necessary, but less verbose
                 return;

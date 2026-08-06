@@ -47,23 +47,29 @@ async function robustFetch(url, options = {}, timeout = GEOLOCATION_API_TIMEOUT_
     } catch (error) {
       clearTimeout(timeoutId);
 
-      // Never retry on timeout, rate limit, or auth errors
-      if (error.name === 'AbortError') {
-        throw new Error(`Request to ${url} timed out after ${timeout}ms`);
-      }
+      // Extract the HTTP status from the error message, if this is an HTTP error.
+      // These are thrown above with the format: `HTTP error! status: <code>, body: ...`
+      const statusMatch = error && error.message && error.message.match(/status: (\d{3})/);
+      const httpStatus = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
-      // Check if error is a non-retryable HTTP error (429, 401, 403, 4xx)
-      if (error.message.includes('status: 429') ||
-          error.message.includes('status: 401') ||
-          error.message.includes('status: 403') ||
-          (error.message.match(/status: (4\d\d)/) && !error.message.includes('status: 500'))) {
+      // Never retry rate limit (429), auth errors (401, 403), or other client errors (4xx)
+      if (httpStatus !== null && httpStatus >= 400 && httpStatus < 500) {
         // Don't retry - immediately fail and let fallback provider handle it
         throw error;
       }
 
-      // Increment retry count for retryable errors (network issues, 5xx errors)
+      // Retryable errors: network issues, 5xx server errors, and timeouts (AbortError).
+      // Timeouts used to fail immediately, which caused all-null weather/soil data on
+      // slow egress hosts (e.g. Render); retrying them with the exponential backoff
+      // below fixes that.
+      const isTimeout = error && error.name === 'AbortError';
+
+      // Increment retry count for retryable errors (network issues, 5xx errors, timeouts)
       retryCount++;
       if (retryCount >= maxRetries) {
+        if (isTimeout) {
+          throw new Error(`Request to ${url} timed out after ${timeout}ms`);
+        }
         throw error;
       }
 
