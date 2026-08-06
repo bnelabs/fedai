@@ -16,6 +16,26 @@ const PROVIDER_MAP = {
 
 class AIProviderFactory {
   /**
+   * Get the list of known provider ids (including aliases).
+   * Used by controllers to reject unknown providers with a clear 400.
+   * @returns {string[]}
+   */
+  static getProviderIds() {
+    return Object.keys(PROVIDER_MAP);
+  }
+
+  /**
+   * Get SOTA-friendly metadata for a single provider (or null if unknown).
+   * @param {string} providerType
+   * @returns {Object|null}
+   */
+  static getProviderMetadata(providerType) {
+    const ProviderClass = PROVIDER_MAP[providerType];
+    if (!ProviderClass) return null;
+    return new ProviderClass({}).getMetadata();
+  }
+
+  /**
    * Create an AI provider instance
    * @param {string} providerType - Type of provider (gemini, openrouter, local-openai)
    * @param {Object} config - Provider configuration

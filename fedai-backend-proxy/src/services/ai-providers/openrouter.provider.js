@@ -96,7 +96,7 @@ class OpenRouterProvider extends BaseAIProvider {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-exp:free',
+          model: 'google/gemma-4-31b-it:free',
           messages: [{ role: 'user', content: 'test' }],
           max_tokens: 5
         })
@@ -143,8 +143,12 @@ class OpenRouterProvider extends BaseAIProvider {
             model.id.includes('vision') ||
             model.id.includes('llava') ||
             model.id.includes('gemini') ||
+            model.id.includes('gemma-4') ||
+            model.id.includes('nemotron') ||
+            model.id.includes('glm-4') ||
             model.id.includes('claude-3') ||
             model.id.includes('gpt-4-vision') ||
+            model.id.includes('gpt-5') ||
             model.id.includes('qwen') && model.id.includes('vl');
 
           return supportsVision;
@@ -169,9 +173,10 @@ class OpenRouterProvider extends BaseAIProvider {
       console.error('Error fetching OpenRouter models:', error);
       // Return fallback list
       return [
-        { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash (Free)', supportsVision: true },
-        { id: 'meta-llama/llama-3.2-90b-vision-instruct', name: 'Llama 3.2 90B Vision', supportsVision: true },
-        { id: 'qwen/qwen-2-vl-72b-instruct', name: 'Qwen 2 VL 72B', supportsVision: true }
+        { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B IT (Free)', supportsVision: true },
+        { id: 'google/gemma-4-26b-a4b-it:free', name: 'Gemma 4 26B A4B IT (Free)', supportsVision: true },
+        { id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'NVIDIA Nemotron 3 Nano Omni 30B (Free)', supportsVision: true },
+        { id: 'nvidia/nemotron-nano-12b-v2-vl:free', name: 'NVIDIA Nemotron Nano 12B v2 VL (Free)', supportsVision: true }
       ];
     }
   }
@@ -183,14 +188,15 @@ class OpenRouterProvider extends BaseAIProvider {
       requiresApiKey: true,
       supportsVision: true,
       supportsStreaming: true,
-      defaultModel: 'google/gemini-2.0-flash-exp:free',
+      defaultModel: 'google/gemma-4-31b-it:free',
       availableModels: [
-        'google/gemini-2.0-flash-exp:free',
-        'google/gemini-pro-1.5',
-        'anthropic/claude-3.5-sonnet',
-        'openai/gpt-4-vision-preview',
-        'meta-llama/llama-3.2-90b-vision-instruct',
-        'qwen/qwen-2-vl-72b-instruct'
+        'google/gemma-4-31b-it:free',
+        'google/gemma-4-26b-a4b-it:free',
+        'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+        'nvidia/nemotron-nano-12b-v2-vl:free',
+        'anthropic/claude-sonnet-5',
+        'openai/gpt-5.6-sol',
+        'google/gemini-3-flash'
       ],
       note: 'Some models are free, others require credits. Check OpenRouter pricing.'
     };

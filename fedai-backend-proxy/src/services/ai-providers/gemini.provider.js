@@ -25,7 +25,7 @@ class GeminiProvider extends BaseAIProvider {
     }
   }
 
-  async generateContent({ systemInstruction, image, model = 'gemini-2.5-flash', signal }) {
+  async generateContent({ systemInstruction, image, model = 'gemini-3-flash', signal }) {
     if (!this.client) {
       throw new Error('Gemini client not initialized. API key missing.');
     }
@@ -72,7 +72,7 @@ class GeminiProvider extends BaseAIProvider {
 
     try {
       await this.client.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash',
         contents: 'Test',
         config: {
           responseMimeType: 'text/plain',
@@ -99,21 +99,21 @@ class GeminiProvider extends BaseAIProvider {
       // We return a curated list of known models
       return [
         {
-          id: 'gemini-2.5-flash',
-          name: 'Gemini 2.5 Flash',
+          id: 'gemini-3-flash',
+          name: 'Gemini 3 Flash',
           description: 'Latest fast model with multimodal vision support',
           supportsVision: true
         },
         {
-          id: 'gemini-2.0-flash-exp',
-          name: 'Gemini 2.0 Flash (Experimental)',
-          description: 'Experimental model with advanced features',
+          id: 'gemini-3',
+          name: 'Gemini 3',
+          description: 'High-quality multimodal model',
           supportsVision: true
         },
         {
-          id: 'gemini-1.5-pro',
-          name: 'Gemini 1.5 Pro',
-          description: 'High-quality model with large context window',
+          id: 'gemini-3-pro-image',
+          name: 'Gemini 3 Pro Image',
+          description: 'Advanced image generation and understanding model',
           supportsVision: true
         }
       ];
@@ -130,11 +130,11 @@ class GeminiProvider extends BaseAIProvider {
       requiresApiKey: true,
       supportsVision: true,
       supportsStreaming: false,
-      defaultModel: 'gemini-2.5-flash',
+      defaultModel: 'gemini-3-flash',
       availableModels: [
-        'gemini-2.5-flash',
-        'gemini-2.0-flash-exp',
-        'gemini-1.5-pro'
+        'gemini-3-flash',
+        'gemini-3',
+        'gemini-3-pro-image'
       ]
     };
   }
