@@ -41,6 +41,16 @@ class BaseAIProvider {
   }
 
   /**
+   * Check whether this provider can analyze images (vision capable).
+   * Text-only providers (supportsVision: false) are still selectable, but
+   * image analysis is rejected by the controller with PROVIDER_NO_VISION.
+   * @returns {boolean}
+   */
+  supportsVision() {
+    return this.getMetadata().supportsVision !== false;
+  }
+
+  /**
    * Get provider metadata
    * @returns {Object}
    */

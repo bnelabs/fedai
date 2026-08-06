@@ -2,6 +2,7 @@
 // Enhanced Gemini controller with multi-provider support
 
 const AIProviderFactory = require('../../services/ai-providers/provider.factory');
+const { validateBaseUrl } = require('../../middleware/validation');
 const {
   getBaseSystemInstruction,
   getJsonOutputStructure,
@@ -14,6 +15,30 @@ const {
  * Multi-provider AI controller
  * Supports Gemini, OpenRouter, and local OpenAI-compatible APIs
  */
+
+/**
+ * Extract an AI API key from the request, trying (in order):
+ * 1. `Authorization: Bearer <key>` header (preferred - keeps keys out of URLs/logs)
+ * 2. JSON body field `aiApiKey`
+ * 3. Query param `aiApiKey` (legacy fallback so old frontends keep working)
+ */
+function getApiKeyFromRequest(req) {
+  const authHeader = req.headers && typeof req.headers.authorization === 'string'
+    ? req.headers.authorization
+    : '';
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    const key = authHeader.slice(7).trim();
+    if (key) return key;
+  }
+  if (req.body && typeof req.body.aiApiKey === 'string' && req.body.aiApiKey.trim()) {
+    return req.body.aiApiKey;
+  }
+  if (req.query && typeof req.query.aiApiKey === 'string' && req.query.aiApiKey.trim()) {
+    return req.query.aiApiKey;
+  }
+  return undefined;
+}
+
 module.exports = () => {
   /**
    * Handles the plant analysis request using configured AI provider
@@ -50,6 +75,25 @@ module.exports = () => {
         });
       }
 
+      // SSRF protection: reject private/loopback/link-local base URLs
+      if (aiBaseUrl) {
+        const baseUrlCheck = validateBaseUrl(aiBaseUrl);
+        if (!baseUrlCheck.valid) {
+          return res.status(400).json({
+            error: baseUrlCheck.error,
+            errorKey: 'INVALID_BASE_URL'
+          });
+        }
+      }
+
+      // Reject unknown providers early (known set from the factory)
+      if (!AIProviderFactory.getProviderIds().includes(aiProvider)) {
+        return res.status(400).json({
+          error: `Unknown AI provider: ${aiProvider}`,
+          errorKey: 'INVALID_PROVIDER'
+        });
+      }
+
       // Create provider configuration
       const providerConfig = {
         apiKey: aiApiKey,
@@ -74,6 +118,14 @@ module.exports = () => {
         return res.status(503).json({
           error: `AI provider configuration invalid: ${validation.error}`,
           errorKey: 'API_KEY_MISSING'
+        });
+      }
+
+      // Vision guard: reject image analysis for text-only providers
+      if (!provider.supportsVision()) {
+        return res.status(400).json({
+          error: `Provider '${provider.name}' does not support image analysis (text-only provider).`,
+          errorKey: 'PROVIDER_NO_VISION'
         });
       }
 
@@ -109,8 +161,7 @@ ${currentTaskInstruction}
       const jsonResponseString = await provider.generateContent({
         systemInstruction,
         image,
-        model: aiModel,
-        signal: req.signal
+        model: aiModel
       });
 
       // Parse and validate response
@@ -192,10 +243,29 @@ ${currentTaskInstruction}
     try {
       const {
         aiProvider = 'gemini',
-        aiApiKey,
         aiBaseUrl,
         aiModel
       } = req.query;
+      const aiApiKey = getApiKeyFromRequest(req);
+
+      // Reject unknown providers with a clear 400
+      if (!AIProviderFactory.getProviderIds().includes(aiProvider)) {
+        return res.status(400).json({
+          error: `Unknown AI provider: ${aiProvider}`,
+          errorKey: 'INVALID_PROVIDER'
+        });
+      }
+
+      // SSRF protection: reject private/loopback/link-local base URLs
+      if (aiBaseUrl) {
+        const baseUrlCheck = validateBaseUrl(aiBaseUrl);
+        if (!baseUrlCheck.valid) {
+          return res.status(400).json({
+            error: baseUrlCheck.error,
+            errorKey: 'INVALID_BASE_URL'
+          });
+        }
+      }
 
       const providerConfig = {
         apiKey: aiApiKey,
@@ -266,7 +336,27 @@ ${currentTaskInstruction}
    */
   const getModels = async (req, res) => {
     try {
-      const { aiProvider = 'gemini', aiApiKey, aiBaseUrl } = req.query;
+      const { aiProvider = 'gemini', aiBaseUrl } = req.query;
+      const aiApiKey = getApiKeyFromRequest(req);
+
+      // Reject unknown providers with a clear 400
+      if (!AIProviderFactory.getProviderIds().includes(aiProvider)) {
+        return res.status(400).json({
+          error: `Unknown AI provider: ${aiProvider}`,
+          errorKey: 'INVALID_PROVIDER'
+        });
+      }
+
+      // SSRF protection: reject private/loopback/link-local base URLs
+      if (aiBaseUrl) {
+        const baseUrlCheck = validateBaseUrl(aiBaseUrl);
+        if (!baseUrlCheck.valid) {
+          return res.status(400).json({
+            error: baseUrlCheck.error,
+            errorKey: 'INVALID_BASE_URL'
+          });
+        }
+      }
 
       const providerConfig = {
         apiKey: aiApiKey,
