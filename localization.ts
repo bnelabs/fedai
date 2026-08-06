@@ -1323,6 +1323,14 @@ const translationCache = {
         localStorage.removeItem(key);
         return null;
       }
+      // Shape guard: the UiStrings type contains function-valued keys (e.g.
+      // locationStatusSuccessIp). A cached object from an older deploy may
+      // have those keys as strings (or missing), which crashes call sites.
+      // Treat any cached entry that lacks the expected function keys as stale.
+      if (typeof data !== 'object' || data === null || typeof data.locationStatusSuccessIp !== 'function' || typeof data.retryButton !== 'string') {
+        localStorage.removeItem(key);
+        return null;
+      }
       return data;
     } catch (error) {
       console.warn(`Error reading translation from cache for ${langCode}:`, error);

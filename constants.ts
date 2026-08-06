@@ -28,7 +28,9 @@ export const CACHE_DURATION_ELEVATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const CACHE_PREFIX_SOIL = 'fedai-soil-';
 export const CACHE_DURATION_SOIL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-export const TRANSLATION_CACHE_PREFIX = 'fedai-translation-';
+// Versioned: v2 invalidates stale cached UiStrings objects from older deploys
+// whose shape may differ (e.g. keys that used to be strings are now functions).
+export const TRANSLATION_CACHE_PREFIX = 'fedai-translation-v2-';
 export const TRANSLATION_CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 1 day
 
 export const CACHE_THROTTLE_DELAY_MS = 500; // Delay for throttling localStorage writes
