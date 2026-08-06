@@ -82,11 +82,16 @@ const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClose }) =>
       try {
         const queryParams = new URLSearchParams({
           aiProvider: formData.provider,
-          ...(formData.apiKey && { aiApiKey: formData.apiKey }),
           ...(formData.baseUrl && { aiBaseUrl: formData.baseUrl })
         });
 
-        const response = await fetch(`/api/gemini-proxy/models?${queryParams}`);
+        // Send the API key via the Authorization header — never in the query string
+        const headers: Record<string, string> = {};
+        if (formData.apiKey) {
+          headers['Authorization'] = `Bearer ${formData.apiKey}`;
+        }
+
+        const response = await fetch(`/api/gemini-proxy/models?${queryParams}`, { headers });
         const data = await response.json();
 
         if (response.ok && data.models) {
@@ -117,7 +122,8 @@ const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClose }) =>
       // Reset fields when changing provider
       apiKey: '',
       baseUrl: provider === 'local-openai' ? 'http://localhost:1234/v1' : undefined,
-      model: ''
+      model: '',
+      note: undefined
     }));
     setTestStatus('idle');
     setTestMessage('');
@@ -126,7 +132,7 @@ const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClose }) =>
   const handlePresetSelect = (presetKey: string) => {
     const preset = AI_PROVIDER_PRESETS[presetKey];
     if (preset) {
-      setFormData(prev => ({ ...prev, ...preset }));
+      setFormData(prev => ({ ...prev, ...preset, note: preset.note || undefined }));
     }
   };
 
@@ -137,12 +143,17 @@ const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClose }) =>
     try {
       const queryParams = new URLSearchParams({
         aiProvider: formData.provider,
-        ...(formData.apiKey && { aiApiKey: formData.apiKey }),
         ...(formData.baseUrl && { aiBaseUrl: formData.baseUrl }),
         ...(formData.model && { aiModel: formData.model })
       });
 
-      const response = await fetch(`/api/gemini-proxy/status?${queryParams}`);
+      // Send the API key via the Authorization header — never in the query string
+      const headers: Record<string, string> = {};
+      if (formData.apiKey) {
+        headers['Authorization'] = `Bearer ${formData.apiKey}`;
+      }
+
+      const response = await fetch(`/api/gemini-proxy/status?${queryParams}`, { headers });
       const data = await response.json();
 
       if (response.ok && data.status === 'UP') {
@@ -280,6 +291,11 @@ const AISettingsModal: React.FC<AISettingsModalProps> = ({ isOpen, onClose }) =>
                   </button>
                 ))}
               </div>
+              {formData.note && (
+                <p className="text-xs text-[var(--status-yellow-text)] mt-2">
+                  ⚠️ {formData.note}
+                </p>
+              )}
             </div>
 
             <div>

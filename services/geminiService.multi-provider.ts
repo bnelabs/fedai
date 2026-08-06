@@ -140,9 +140,6 @@ export async function testAIService(aiSettings?: AISettings): Promise<TestServic
 
   if (aiSettings) {
     queryParams.set('aiProvider', aiSettings.provider);
-    if (aiSettings.apiKey) {
-      queryParams.set('aiApiKey', aiSettings.apiKey);
-    }
     if (aiSettings.baseUrl) {
       queryParams.set('aiBaseUrl', aiSettings.baseUrl);
     }
@@ -159,7 +156,16 @@ export async function testAIService(aiSettings?: AISettings): Promise<TestServic
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), GEMINI_TEST_TIMEOUT_MS);
 
-    const response = await fetch(PROXY_STATUS_ENDPOINT, { signal: controller.signal });
+    // Send the API key via the Authorization header — never in the query string
+    const headers: Record<string, string> = {};
+    if (aiSettings?.apiKey) {
+      headers['Authorization'] = `Bearer ${aiSettings.apiKey}`;
+    }
+
+    const response = await fetch(PROXY_STATUS_ENDPOINT, {
+      signal: controller.signal,
+      headers
+    });
     clearTimeout(timeoutId);
 
     if (response.ok) {

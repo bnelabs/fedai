@@ -22,6 +22,7 @@ export interface AISettings {
   apiKey: string;
   baseUrl?: string; // For local OpenAI-compatible APIs
   model?: string; // Optional custom model
+  note?: string; // UI hint shown with the preset/settings (e.g. capability flags)
 }
 
 export interface AISettingsFormData extends AISettings {
@@ -56,5 +57,36 @@ export const AI_PROVIDER_PRESETS: Record<string, Partial<AISettings>> = {
     provider: 'local-openai',
     baseUrl: 'http://localhost:5000/v1',
     model: 'text-gen-model'
+  },
+  // SOTA cloud providers (bring your own API key)
+  'openai': {
+    provider: 'local-openai',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-5.6-sol'
+  },
+  'anthropic': {
+    provider: 'local-openai',
+    baseUrl: 'https://api.anthropic.com/v1',
+    model: 'claude-sonnet-5'
+  },
+  'kimi': {
+    provider: 'local-openai',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k3'
+  },
+  'zai': {
+    provider: 'local-openai',
+    baseUrl: 'https://api.z.ai/api/paas/v4',
+    model: 'glm-4.6v-flash'
+  },
+  'deepseek': {
+    provider: 'local-openai',
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-v4-flash',
+    note: 'TEXT-ONLY — no image/vision support. Can analyze text, but not plant photos.'
+  },
+  'openrouter-free': {
+    provider: 'openrouter',
+    model: 'google/gemma-4-31b-it:free'
   }
 };
